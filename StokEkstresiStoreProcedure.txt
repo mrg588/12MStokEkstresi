@@ -1,0 +1,54 @@
+﻿CREATE TABLE StokEkstresi (SiraNo INT IDENTITY(1,1) , IslemTur NVARCHAR(5), EvrakNo VARCHAR(16), Tarih VARCHAR(15) , GirisMiktar NUMERIC(25,2), CikisMiktar NUMERIC(25,2), StokMiktar NUMERIC(25,2))
+
+CREATE PROC [dbo].sp_Stok_Ekstresi (
+@malKodu VARCHAR(30) = null, 
+@baslangicTarihi INT = null, 
+@bitisTarihi INT = null
+)
+AS
+
+BEGIN
+
+      INSERT INTO StokEkstresi SELECT CAST(CASE WHEN sti.IslemTur = 0 THEN 'GİRİŞ' 
+				   ELSE 'ÇIKIŞ' END as NVARCHAR(5)) as IslemTur, 
+              sti.EvrakNo, 
+			  CONVERT(VARCHAR(15),CAST(sti.Tarih - 2 AS datetime),104) Tarih, --tarih formatını düzenler
+			  CAST(CASE WHEN sti.IslemTur = 0 THEN sti.Miktar
+			       ELSE 0 END as NUMERIC(25,2)) as GirisMiktar, 
+			  CAST(CASE WHEN sti.IslemTur = 1 THEN sti.Miktar 
+			       ELSE 0 END as NUMERIC(25,2)) as CikisMiktar,
+				   NULL StokMiktar
+	   FROM STI sti 
+	   WHERE ((@baslangicTarihi IS NULL AND @bitisTarihi IS NULL) OR sti.Tarih BETWEEN @baslangicTarihi AND @bitisTarihi) AND (@malKodu IS NULL OR sti.MalKodu = @malKodu) --parametrelere göre filtreleme (parametreler null girilirse filtresiz bütün dataları çekecektir)
+	   ORDER BY sti.Tarih ASC 
+DECLARE @StokMiktari NUMERIC(25,2)
+DECLARE @SiraNo INT
+DECLARE @GirisMiktar NUMERIC(25,2)
+DECLARE @CikisMiktar NUMERIC(25,2)
+DECLARE @IslemTur NVARCHAR(5)
+DECLARE @ToplamStok NUMERIC(25,2) = 0
+DECLARE CURSOR_STOCK CURSOR FOR 
+SELECT SiraNo,IslemTur,GirisMiktar,CikisMiktar,StokMiktar FROM StokEkstresi
+OPEN CURSOR_STOCK
+FETCH NEXT FROM CURSOR_STOCK INTO @SiraNo,@IslemTur, @GirisMiktar, @CikisMiktar, @StokMiktari
+WHILE @@FETCH_STATUS=0
+BEGIN 
+	IF @IslemTur ='GİRİŞ'
+		BEGIN
+		SET @ToplamStok = @ToplamStok + @GirisMiktar
+		END
+	ELSE
+		BEGIN
+		SET @ToplamStok = @ToplamStok - @CikisMiktar
+		END
+
+UPDATE StokEkstresi 
+SET StokMiktar = @ToplamStok
+WHERE SiraNo = @SiraNo
+FETCH NEXT FROM CURSOR_STOCK INTO @SiraNo,@IslemTur, @GirisMiktar, @CikisMiktar, @StokMiktari
+END
+CLOSE CURSOR_STOCK
+DEALLOCATE CURSOR_STOCK
+	SELECT * FROM StokEkstresi
+	   TRUNCATE TABLE StokEkstresi 
+END
